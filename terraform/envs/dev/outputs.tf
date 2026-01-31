@@ -26,5 +26,9 @@ output "alb_logs_bucket" {
   value = module.monitoring.alb_logs_bucket
 }
 
+output "dns_validations" {
+  value  = module.acm.acm_dns_validation_records
+}
+
 
 

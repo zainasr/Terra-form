@@ -40,3 +40,8 @@ variable "log_bucket" {
   description = "name of bucket to where alb add logs"
   
 }
+
+
+variable "site_cert" { 
+  description = "certificate"
+}

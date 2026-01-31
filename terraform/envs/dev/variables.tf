@@ -13,3 +13,8 @@ variable "alert_email" {
   description = "alert email"
   type = string
 }
+
+variable "domain_name" {
+  type = string
+  description = "domain name"
+}

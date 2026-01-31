@@ -31,6 +31,7 @@ module "alb" {
   public_subnet_ids = module.vpc.public_subnet_ids
   target_instance_id = module.ec2.instance_id
   log_bucket         = module.monitoring.alb_logs_bucket
+  site_cert          = module.acm.site_cert
   
 }
 
@@ -41,4 +42,15 @@ module monitoring {
   instance_id       = module.ec2.instance_id
   alert_email       = var.alert_email
   alb_arn_suffix    = module.alb.alb_arn_suffix
+}
+
+
+
+module acm {
+  source            = "../../modules/acm"
+  project_name      = var.project_name
+  environment       = var.environment
+  domain_name       = var.domain_name
+  alb_dns_name      = module.alb.alb_dns_name
+  zone_id           = module.alb.zone_id
 }
