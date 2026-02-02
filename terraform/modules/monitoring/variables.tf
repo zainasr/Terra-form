@@ -8,9 +8,9 @@ variable "environment" {
   type        = string
 }
 
-variable "instance_id" {
-    description = "ec2 instance id for which aws_cloudwatch_metric_alarm created"
-    type = string
+variable "asg_name" {
+  description = "ASG name for ASG-level insufficient capacity alarm"
+  type        = string
 }
 
 variable "alert_email" {

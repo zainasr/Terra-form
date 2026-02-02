@@ -18,10 +18,7 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
-variable "target_instance_id" {
-  description = "EC2 instance ID to register with the ALB"
-  type        = string
-}
+
 
 variable "target_port" {
   description = "Port on the EC2 instance to send traffic to"

@@ -12,3 +12,5 @@ variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
 }
+
+# AZs are derived from data.aws_availability_zones - one subnet per AZ for maximum availability

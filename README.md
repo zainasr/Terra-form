@@ -9,9 +9,11 @@ This project implements a complete, production-ready AWS infrastructure stack us
 ### Key Highlights
 
 - ✅ **Modular Architecture**: Reusable, composable Terraform modules
-- ✅ **Environment Separation**: Multi-environment support (dev, staging, prod)
+- ✅ **Auto Scaling**: Production-ready ASG with launch templates and multi-AZ deployment
+- ✅ **High Availability**: Private subnets across multiple AZs with NAT gateway
 - ✅ **State Management**: Remote state with S3 backend and encryption
 - ✅ **Security Best Practices**: IAM roles, security groups, least privilege access
+- ✅ **HTTPS/TLS**: ACM certificate management with DNS validation
 - ✅ **Observability**: CloudWatch logs, metrics, alarms, and SNS notifications
 - ✅ **Production Patterns**: Security group rules, bucket policies, encryption at rest
 - ✅ **CI/CD Ready**: Designed for automated deployment pipelines
@@ -21,64 +23,74 @@ This project implements a complete, production-ready AWS infrastructure stack us
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Internet Gateway                        │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │  ALB (HTTP) │
-                    │  Port 80    │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │ Target Group │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │   EC2        │
-                    │  (NGINX)     │
-                    └──────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-    ┌───▼───┐         ┌───▼───┐         ┌───▼───┐
-    │Public │         │Public │         │  VPC  │
-    │Subnet │         │Subnet │         │       │
-    │  AZ-1 │         │  AZ-2 │         │       │
-    └───────┘         └───────┘         └───────┘
+                    Internet
+                       │
+            ┌──────────▼──────────┐
+            │  Internet Gateway   │
+            └──────────┬──────────┘
+                       │
+    ┌──────────────────┼──────────────────┐
+    │  Public Subnets (Multi-AZ)          │
+    │  ┌────────────┐    ┌────────────┐   │
+    │  │ ALB        │    │ NAT GW     │   │
+    │  │ HTTPS/HTTP │    │            │   │
+    │  └─────┬──────┘    └─────┬──────┘   │
+    └────────┼─────────────────┼──────────┘
+             │                 │
+    ┌────────▼─────────────────▼──────────┐
+    │  Private Subnets (Multi-AZ)         │
+    │  ┌─────────────────────────────┐    │
+    │  │   Auto Scaling Group        │    │
+    │  │  ┌────────┐    ┌────────┐   │    │
+    │  │  │EC2-AZ1 │    │EC2-AZ2 │   │    │
+    │  │  │(NGINX) │    │(NGINX) │   │    │
+    │  │  └────────┘    └────────┘   │    │
+    │  └─────────────────────────────┘    │
+    └─────────────────────────────────────┘
 ```
 
 ### Infrastructure Components
 
 1. **VPC Module** (`modules/vpc/`)
    - Custom VPC with DNS support
-   - Public subnets across multiple availability zones
-   - Internet Gateway and route tables
-   - High availability design
+   - Public and private subnets (one per AZ for maximum availability)
+   - Internet Gateway, NAT Gateway, route tables
+   - Multi-AZ high availability design
 
-2. **EC2 Module** (`modules/ec2/`)
-   - Amazon Linux 2023 instances
-   - Security groups with modern rule resources
-   - User data scripts for automated bootstrapping
-   - SSM Agent, CloudWatch Agent, NGINX installation
-   - IAM instance profiles for secure access
+2. **Auto Scaling Module** (`modules/asg/`, `modules/asg_launch_template/`)
+   - Launch template with user data for instance bootstrapping
+   - Auto Scaling Group with min/max capacity
+   - ELB health checks with grace period
+   - Instances in private subnets for security
+   - SSM Agent, CloudWatch Agent, NGINX pre-installed
 
-3. **ALB Module** (`modules/alb/`)
-   - Application Load Balancer with HTTP listener
+3. **Security Groups Module** (`modules/ec2_sg/`)
+   - Dedicated security group for ASG instances
+   - Ingress from ALB only (port 80)
+   - Modern security group rule resources (one CIDR per rule)
+   - Least privilege egress rules
+
+4. **ALB Module** (`modules/alb/`)
+   - Application Load Balancer with HTTP/HTTPS listeners
    - Target group with health checks
-   - Access logs to S3
+   - Access logs to S3 (encrypted, versioned)
    - Security groups following AWS best practices
 
-4. **IAM Module** (`modules/iam/`)
+5. **ACM Module** (`modules/acm/`)
+   - SSL/TLS certificate management
+   - DNS validation with automated CNAME records
+   - Integration with ALB for HTTPS
+
+6. **IAM Module** (`modules/iam/`)
    - EC2 instance roles with least privilege
    - CloudWatch Logs permissions
    - SSM Session Manager access
    - Secure assume role policies
 
-5. **Monitoring Module** (`modules/monitoring/`)
+7. **Monitoring Module** (`modules/monitoring/`)
    - S3 bucket for ALB access logs (encrypted, versioned)
-   - CloudWatch Log Groups
-   - CloudWatch Alarms (CPU, ALB 5xx errors)
+   - CloudWatch Log Groups for application logs
+   - CloudWatch Alarms (ASG health, ALB 5xx errors)
    - SNS topics for alerting
 
 ---
@@ -88,37 +100,49 @@ This project implements a complete, production-ready AWS infrastructure stack us
 ```
 infra/
 ├── terraform/
-│   ├── modules/                    # Reusable Terraform modules
-│   │   ├── vpc/                    # VPC, subnets, IGW, route tables
+│   ├── modules/                        # Reusable Terraform modules
+│   │   ├── vpc/                        # VPC, subnets, IGW, NAT, routes
 │   │   │   ├── main.tf
 │   │   │   ├── outputs.tf
 │   │   │   └── variables.tf
-│   │   ├── ec2/                    # EC2 instances, security groups
-│   │   │   ├── main.tf
-│   │   │   ├── locals.tf          # User data scripts
-│   │   │   ├── outputs.tf
-│   │   │   └── variables.tf
-│   │   ├── alb/                   # Application Load Balancer
+│   │   ├── asg/                        # Auto Scaling Group
 │   │   │   ├── main.tf
 │   │   │   ├── outputs.tf
 │   │   │   └── variables.tf
-│   │   ├── iam/                   # IAM roles and policies
+│   │   ├── asg_launch_template/        # Launch template for ASG
+│   │   │   ├── main.tf
+│   │   │   ├── outputs.tf
+│   │   │   └── variable.tf
+│   │   ├── ec2_sg/                     # Security groups for instances
 │   │   │   ├── main.tf
 │   │   │   ├── outputs.tf
 │   │   │   └── variables.tf
-│   │   └── monitoring/            # CloudWatch, S3, SNS
+│   │   ├── alb/                        # Application Load Balancer
+│   │   │   ├── main.tf
+│   │   │   ├── outputs.tf
+│   │   │   └── variables.tf
+│   │   ├── acm/                        # ACM certificate management
+│   │   │   ├── main.tf
+│   │   │   ├── outputs.tf
+│   │   │   └── variables.tf
+│   │   ├── iam/                        # IAM roles and policies
+│   │   │   ├── main.tf
+│   │   │   ├── outputs.tf
+│   │   │   └── variables.tf
+│   │   └── monitoring/                 # CloudWatch, S3, SNS
 │   │       ├── main.tf
 │   │       ├── output.tf
 │   │       └── variables.tf
-│   └── envs/                      # Environment-specific configurations
-│       └── dev/                   # Development environment
-│           ├── main.tf            # Module composition
-│           ├── variables.tf       # Environment variables
-│           ├── outputs.tf         # Environment outputs
-│           ├── backend.tf         # Remote state configuration
-│           ├── providers.tf       # Provider configuration
-│           ├── versions.tf        # Version constraints
-│           └── terraform.tfvars   # Variable values
+│   └── envs/                           # Environment-specific configurations
+│       └── dev/                        # Development environment
+│           ├── main.tf                 # Module composition
+│           ├── locals.tf               # User data scripts
+│           ├── variables.tf            # Environment variables
+│           ├── outputs.tf              # Environment outputs
+│           ├── backend.tf              # Remote state configuration
+│           ├── providers.tf            # Provider configuration
+│           ├── versions.tf             # Version constraints
+│           └── terraform.tfvars        # Variable values
 └── README.md
 ```
 
@@ -186,10 +210,12 @@ infra/
 
 ### Network Security
 - VPC isolation with private/public subnet separation
+- ASG instances in private subnets (no direct internet access)
+- NAT Gateway for private subnet internet egress
 - Security groups with explicit ingress/egress rules
 - No SSH access from internet (SSM Session Manager instead)
-- ALB security group allows HTTP from internet
-- EC2 security group allows HTTP only from ALB
+- ALB security group allows HTTP/HTTPS from internet
+- EC2 security group allows HTTP only from ALB (security group referencing)
 
 ### Access Control
 - IAM roles with least privilege policies
@@ -219,7 +245,7 @@ infra/
 - 14-day log retention policy
 
 ### CloudWatch Metrics & Alarms
-- **EC2 CPU Alarm**: Triggers when CPU > 70% for 2 consecutive periods
+- **ASG Health Alarm**: Triggers when in-service instances < 1 (insufficient capacity)
 - **ALB 5xx Alarm**: Triggers on any 5xx error from the load balancer
 - **SNS Notifications**: Email alerts sent to configured recipients
 
@@ -329,9 +355,11 @@ alert_email  = "alerts@example.com"
 Each module accepts variables for customization. Key variables:
 
 - **VPC Module**: `vpc_cidr` (default: `10.0.0.0/16`)
-- **EC2 Module**: `subnet_id`, `instance_profile_name`, `ssh_ingress_cidr_blocks`
-- **ALB Module**: `target_port` (default: `80`), `log_bucket`
-- **Monitoring Module**: `instance_id`, `alb_arn_suffix`, `alert_email`
+- **ASG Module**: `min_size`, `max_size`, `desired_capacity`, `private_subnet_ids`
+- **Launch Template Module**: `instance_type`, `instance_profile_name`, `ec2_sg_id`, `user_data`
+- **ALB Module**: `target_port` (default: `80`), `log_bucket`, `site_cert`
+- **ACM Module**: `domain_name`, `alb_dns_name`, `zone_id`
+- **Monitoring Module**: `asg_name`, `alb_arn_suffix`, `alert_email`
 
 ---
 
@@ -377,10 +405,12 @@ jobs:
 
 ### Manual Testing
 
-1. **Verify ALB**: Access ALB DNS name via HTTP
-2. **Check EC2**: Verify NGINX is running
-3. **Test Monitoring**: Trigger alarms and verify SNS notifications
-4. **Validate Logs**: Check CloudWatch Logs and S3 access logs
+1. **Verify ALB**: Access ALB DNS name via HTTP/HTTPS
+2. **Check ASG**: Verify instances are healthy and in-service
+3. **Test Auto Scaling**: Terminate an instance, verify ASG replaces it
+4. **Test Monitoring**: Trigger alarms and verify SNS notifications
+5. **Validate Logs**: Check CloudWatch Logs and S3 access logs
+6. **HTTPS Certificate**: Verify ACM certificate is issued and ALB serves HTTPS
 
 ### Terraform Commands
 
@@ -409,11 +439,12 @@ terraform show
 - Infrastructure documentation as code
 
 ### AWS Services Integration
-- VPC networking fundamentals
-- EC2 instance management
-- Application Load Balancer configuration
+- VPC networking with public/private subnets and NAT Gateway
+- Auto Scaling Groups with launch templates
+- Application Load Balancer with target groups
+- ACM for SSL/TLS certificate management
 - CloudWatch monitoring and alerting
-- S3 for log storage
+- S3 for log storage with bucket policies
 - IAM for access control
 
 ### Terraform Advanced Features
@@ -424,21 +455,26 @@ terraform show
 - Provider versioning and constraints
 
 ### Production Readiness
-- Security hardening (security groups, IAM)
-- Monitoring and alerting
+- Auto Scaling for high availability and fault tolerance
+- Multi-AZ deployment with private subnets
+- Security hardening (security groups, IAM, private subnets)
+- Monitoring and alerting (ASG health, ALB errors)
 - Log aggregation and retention
-- Encryption at rest
-- High availability design
+- Encryption at rest (S3 logs)
+- HTTPS/TLS with ACM
 
 ---
 
 ## 🗺️ Roadmap
 
+- [x] Add Auto Scaling Groups with launch templates
+- [x] Multi-AZ deployment with private subnets
+- [x] ACM certificate management for HTTPS
+- [x] NAT Gateway for private subnet egress
 - [ ] Add CI/CD pipeline (GitHub Actions / GitLab CI)
 - [ ] Implement Terraform workspaces for environment management
 - [ ] Add automated testing (Terratest)
 - [ ] Implement blue-green deployments
-- [ ] Add Auto Scaling Groups
 - [ ] Implement RDS database module
 - [ ] Add WAF integration for ALB
 - [ ] Implement CloudFront CDN

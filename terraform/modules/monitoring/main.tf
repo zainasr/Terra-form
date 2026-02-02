@@ -77,19 +77,21 @@ resource "aws_cloudwatch_log_group" "ec2_logs" {
 }
 
 
-resource "aws_cloudwatch_metric_alarm" "high_cpu" {
-  alarm_name          = "${var.project_name}-${var.environment}-high-cpu"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
+resource "aws_cloudwatch_metric_alarm" "asg_insufficient_capacity" {
+  alarm_name          = "${var.project_name}-${var.environment}-asg-insufficient-capacity"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "GroupInServiceInstances"
+  namespace           = "AWS/AutoScaling"
   period              = 60
   statistic           = "Average"
-  threshold           = 70
+  threshold           = 1
 
   dimensions = {
-    InstanceId = "${var.instance_id}"
+    AutoScalingGroupName = var.asg_name
   }
+
+
 
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
